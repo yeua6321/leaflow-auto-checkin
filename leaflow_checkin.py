@@ -44,7 +44,7 @@ class LeaflowAutoCheckin:
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--window-size=1024,768')
         
         # 通用配置
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
@@ -58,14 +58,14 @@ class LeaflowAutoCheckin:
         """关闭初始弹窗"""
         try:
             logger.info("尝试关闭初始弹窗...")
-            time.sleep(3)  # 等待弹窗加载
+            time.sleep(5)  # 等待弹窗加载
             
             # 尝试关闭弹窗
             try:
                 actions = ActionChains(self.driver)
                 actions.move_by_offset(10, 10).click().perform()
                 logger.info("已成功关闭弹窗")
-                time.sleep(2)
+                time.sleep(3)
                 return True
             except:
                 pass
@@ -93,7 +93,7 @@ class LeaflowAutoCheckin:
         
         # 访问登录页面
         self.driver.get("https://leaflow.net/login")
-        time.sleep(5)
+        time.sleep(7)
         
         # 关闭弹窗
         self.close_popup()
@@ -103,7 +103,7 @@ class LeaflowAutoCheckin:
             logger.info("查找邮箱输入框...")
             
             # 等待页面稳定
-            time.sleep(2)
+            time.sleep(5)
             
             # 尝试多种选择器找到邮箱输入框
             email_selectors = [
@@ -229,7 +229,7 @@ class LeaflowAutoCheckin:
             
             # 跳转到仪表板页面
             self.driver.get("https://leaflow.net/dashboard")
-            time.sleep(3)
+            time.sleep(5)
             
             # 等待页面加载
             WebDriverWait(self.driver, 10).until(
@@ -316,7 +316,7 @@ class LeaflowAutoCheckin:
         
         try:
             # 先等待页面可能的重载
-            time.sleep(5)
+            time.sleep(8)
             
             # 使用和单账号成功时相同的选择器
             checkin_selectors = [
@@ -640,3 +640,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

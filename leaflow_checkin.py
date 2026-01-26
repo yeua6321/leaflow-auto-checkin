@@ -283,15 +283,61 @@ class LeaflowAutoCheckin:
                 page_title = self.driver.title
                 logger.info(f"当前URL: {current_url}, 页面标题: {page_title}")
                 
+                # 检查502错误
+                if "502" in page_title or "Bad Gateway" in page_title:
+                    logger.warning("检测到502错误，服务器可能正在处理请求，继续等待...")
+                    # 如果是在auth_callback页面，等待重定向完成
+                    if "auth_callback" in current_url:
+                        logger.info("检测到认证回调页面，等待服务器处理认证并重定向...")
+                        # 等待URL变化或页面加载（增加等待时间，因为认证处理可能需要更长时间）
+                        max_wait = 60  # 最多等待60秒
+                        waited = 0
+                        while waited < max_wait:
+                            time.sleep(5)
+                            waited += 5
+                            try:
+                                current_url = self.driver.current_url
+                                page_title = self.driver.title
+                                # 如果URL不再是auth_callback或不再是502错误，说明重定向成功
+                                if "auth_callback" not in current_url:
+                                    logger.info(f"认证回调完成，已重定向到: {current_url}")
+                                    break
+                                if "502" not in page_title and "Bad Gateway" not in page_title:
+                                    logger.info(f"502错误已解决，页面标题: {page_title}")
+                                    break
+                                logger.info(f"仍在等待认证处理... ({waited}/{max_wait}秒)")
+                            except:
+                                pass
+                        
+                        # 刷新页面状态
+                        current_url = self.driver.current_url
+                        page_title = self.driver.title
+                        logger.info(f"当前URL: {current_url}, 页面标题: {page_title}")
+                    else:
+                        # 如果不是回调页面，尝试刷新
+                        logger.info("尝试刷新页面...")
+                        self.driver.refresh()
+                        time.sleep(5)
+                        current_url = self.driver.current_url
+                        page_title = self.driver.title
+                    
+                    # 如果仍然是502错误，继续下一次循环
+                    if "502" in page_title or "Bad Gateway" in page_title:
+                        logger.warning(f"第 {attempt + 1} 次尝试仍然遇到502错误，继续等待...")
+                        continue
+                
                 # 检查是否需要登录（如果跳转到登录页面）
                 if "login" in current_url.lower():
                     logger.warning("检测到需要登录，可能登录状态已失效")
                     return False
                 
                 # 等待页面DOM完全加载
-                WebDriverWait(self.driver, 10).until(
-                    lambda driver: driver.execute_script("return document.readyState") == "complete"
-                )
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        lambda driver: driver.execute_script("return document.readyState") == "complete"
+                    )
+                except TimeoutException:
+                    logger.warning("页面DOM加载超时，但继续尝试查找元素...")
                 
                 # 检查页面是否包含签到相关元素 - 扩展更多选择器
                 checkin_indicators = [
@@ -469,6 +515,15 @@ class LeaflowAutoCheckin:
         
         # 检查是否需要重新登录
         current_url = self.driver.current_url
+        page_title = self.driver.title
+        
+        # 检查502错误
+        if "502" in page_title or "Bad Gateway" in page_title:
+            logger.warning("初始访问遇到502错误，等待服务器响应...")
+            time.sleep(10)  # 额外等待
+            current_url = self.driver.current_url
+            page_title = self.driver.title
+        
         if "login" in current_url.lower():
             logger.warning("检测到需要登录，尝试重新登录...")
             if not self.login():
@@ -487,9 +542,22 @@ class LeaflowAutoCheckin:
                 logger.error(f"页面URL: {current_url}")
                 logger.error(f"页面标题: {page_title}")
                 logger.error(f"页面内容预览: {page_text}")
-            except:
-                pass
-            raise Exception("签到页面加载失败，无法找到签到相关元素")
+                
+                # 如果仍然是502错误，尝试重新访问
+                if "502" in page_title or "Bad Gateway" in page_title:
+                    logger.warning("检测到持续的502错误，尝试重新访问签到页面...")
+                    self.driver.get("https://checkin.leaflow.net")
+                    time.sleep(10)
+                    # 再次尝试等待页面加载
+                    if self.wait_for_checkin_page_loaded(max_retries=3, wait_time=20):
+                        logger.info("重新访问后成功加载页面")
+                    else:
+                        raise Exception("签到页面持续返回502错误，服务器可能暂时不可用")
+            except Exception as e:
+                if "502" not in str(e) and "Bad Gateway" not in str(e):
+                    raise Exception(f"签到页面加载失败: {str(e)}")
+                else:
+                    raise
         
         # 查找并点击立即签到按钮
         checkin_result = self.find_and_click_checkin_button()

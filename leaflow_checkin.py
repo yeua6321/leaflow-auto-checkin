@@ -52,8 +52,22 @@ class LeaflowAutoCheckin:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
+        # 设置页面加载策略为eager，只等待DOM加载完成，不等待所有资源
+        chrome_options.page_load_strategy = 'eager'
+        
         self.driver = webdriver.Chrome(options=chrome_options)
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        # 设置超时时间
+        self.driver.set_page_load_timeout(120)  # 页面加载超时120秒
+        self.driver.implicitly_wait(10)  # 隐式等待10秒
+        self.driver.set_script_timeout(60)  # 脚本执行超时60秒
+        
+        # 设置窗口大小，避免某些页面布局问题
+        try:
+            self.driver.set_window_size(1920, 1080)
+        except:
+            pass
         
     def close_popup(self):
         """关闭初始弹窗"""
@@ -92,8 +106,23 @@ class LeaflowAutoCheckin:
         """执行登录流程"""
         logger.info(f"开始登录流程")
         
-        # 访问登录页面
-        self.driver.get("https://leaflow.net/login")
+        # 访问登录页面，使用超时保护
+        try:
+            self.driver.set_page_load_timeout(120)  # 设置页面加载超时
+            self.driver.get("https://leaflow.net/login")
+            logger.info("已访问登录页面")
+        except TimeoutException:
+            logger.warning("登录页面加载超时，但继续尝试...")
+            time.sleep(10)  # 等待页面可能的部分加载
+        except Exception as e:
+            error_msg = str(e)
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                logger.warning("登录页面加载超时，尝试继续...")
+                time.sleep(10)
+            else:
+                logger.error(f"访问登录页面失败: {e}")
+                raise Exception(f"无法访问登录页面: {e}")
+        
         time.sleep(7)
         
         # 关闭弹窗
@@ -504,14 +533,52 @@ class LeaflowAutoCheckin:
         """执行签到流程"""
         logger.info("跳转到签到页面...")
         
-        # 跳转到签到页面
+        # 跳转到签到页面，使用超时保护
         try:
-            self.driver.get("https://checkin.leaflow.net")
-            logger.info("已跳转到签到页面，等待页面加载...")
+            # 临时增加页面加载超时时间
+            self.driver.set_page_load_timeout(180)  # 临时设置为180秒
+            
+            try:
+                self.driver.get("https://checkin.leaflow.net")
+                logger.info("已跳转到签到页面，等待页面加载...")
+            except TimeoutException:
+                logger.warning("页面加载超时，但继续尝试...")
+                # 即使超时，也尝试继续，因为页面可能已经部分加载
+                # 等待一下让页面有机会加载
+                time.sleep(10)
+            except Exception as e:
+                error_msg = str(e)
+                if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                    logger.warning("页面加载超时，尝试使用JavaScript导航...")
+                    # 尝试使用JavaScript导航作为备选方案
+                    try:
+                        self.driver.execute_script("window.location.href = 'https://checkin.leaflow.net';")
+                        time.sleep(10)
+                    except Exception as js_error:
+                        logger.warning(f"JavaScript导航也遇到问题: {js_error}，继续尝试...")
+                else:
+                    logger.error(f"访问签到页面时出错: {e}")
+                    # 尝试使用JavaScript导航作为备选方案
+                    try:
+                        logger.info("尝试使用JavaScript导航...")
+                        self.driver.execute_script("window.location.href = 'https://checkin.leaflow.net';")
+                        time.sleep(5)
+                    except Exception as js_error:
+                        logger.error(f"JavaScript导航也失败: {js_error}")
+                        raise Exception(f"无法访问签到页面: {e}")
+            
+            # 恢复原始超时设置
+            self.driver.set_page_load_timeout(120)
             time.sleep(5)  # 初始等待
         except Exception as e:
-            logger.error(f"跳转到签到页面失败: {e}")
-            raise Exception(f"无法访问签到页面: {e}")
+            error_msg = str(e)
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                logger.warning("页面加载超时，尝试继续处理...")
+                # 不抛出异常，继续尝试，因为页面可能已经部分加载
+                time.sleep(10)
+            else:
+                logger.error(f"跳转到签到页面失败: {e}")
+                raise Exception(f"无法访问签到页面: {e}")
         
         # 检查是否需要重新登录
         current_url = self.driver.current_url

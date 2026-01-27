@@ -102,6 +102,62 @@ class LeaflowAutoCheckin:
             EC.presence_of_element_located((by, value))
         )
     
+    def open_in_new_tab(self, url):
+        """在新标签页中打开URL"""
+        try:
+            logger.info(f"在新标签页中打开: {url}")
+            # 使用JavaScript在新标签页中打开链接
+            self.driver.execute_script(f"window.open('{url}', '_blank');")
+            # 切换到新打开的标签页
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            logger.info("已切换到新标签页")
+            return True
+        except Exception as e:
+            logger.error(f"在新标签页中打开链接失败: {e}")
+            return False
+    
+    def click_element_in_new_tab(self, element):
+        """点击元素并在新标签页中打开（适用于链接元素）"""
+        try:
+            # 获取元素的href属性（如果是链接）
+            href = element.get_attribute('href')
+            if href:
+                return self.open_in_new_tab(href)
+            else:
+                logger.warning("元素没有href属性，尝试使用Ctrl+Click")
+                # 对于没有href的元素，使用Ctrl+Click
+                from selenium.webdriver.common.keys import Keys
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.key_down(Keys.CONTROL).click(element).key_up(Keys.CONTROL).perform()
+                # 切换到新标签页
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+                return True
+        except Exception as e:
+            logger.error(f"在新标签页中点击元素失败: {e}")
+            return False
+    
+    def switch_to_tab(self, tab_index):
+        """切换到指定索引的标签页"""
+        try:
+            self.driver.switch_to.window(self.driver.window_handles[tab_index])
+            logger.info(f"已切换到标签页 {tab_index}")
+            return True
+        except Exception as e:
+            logger.error(f"切换标签页失败: {e}")
+            return False
+    
+    def close_current_tab(self):
+        """关闭当前标签页并切换回第一个标签页"""
+        try:
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[0])
+            logger.info("已关闭当前标签页并切换回主标签页")
+            return True
+        except Exception as e:
+            logger.error(f"关闭标签页失败: {e}")
+            return False
+    
     def login(self):
         """执行登录流程"""
         logger.info(f"开始登录流程")
@@ -890,4 +946,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

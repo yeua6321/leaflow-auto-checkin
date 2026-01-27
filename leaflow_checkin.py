@@ -65,7 +65,7 @@ class LeaflowAutoCheckin:
         
         # 设置窗口大小，避免某些页面布局问题
         try:
-            self.driver.set_window_size(1920, 1080)
+            self.driver.set_window_size(1024, 768)
         except:
             pass
         

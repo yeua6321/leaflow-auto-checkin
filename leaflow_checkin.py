@@ -14,7 +14,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from webdriver_manager.chrome import ChromeDriverManager
 import requests
 from datetime import datetime
 
@@ -39,35 +41,110 @@ class LeaflowAutoCheckin:
         """设置Chrome驱动选项"""
         chrome_options = Options()
         
-        # GitHub Actions环境配置
-        if os.getenv('GITHUB_ACTIONS'):
-            chrome_options.add_argument('--headless')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1024,768')
-        
-        # 通用配置
+        # 禁用自动化标志和兼容性选项
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        # 设置页面加载策略为eager，只等待DOM加载完成，不等待所有资源
+        # 基础沙箱和安全选项
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        
+        # 使用 Chromium 而不是 Google Chrome
+        chromium_paths = [
+            '/snap/bin/chromium',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+        ]
+        
+        # 查找系统中可用的 Chromium
+        chromium_binary = None
+        for path in chromium_paths:
+            if os.path.exists(path):
+                chromium_binary = path
+                logger.info(f"找到 Chromium 二进制文件: {path}")
+                break
+        
+        if chromium_binary:
+            chrome_options.binary_location = chromium_binary
+        
+        # GitHub Actions环境配置
+        if os.getenv('GITHUB_ACTIONS'):
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--headless=new')  # 新版 headless 模式
+            chrome_options.add_argument('--window-size=1024,768')
+        else:
+            # 本地非 CI 环境的配置
+            chrome_options.add_argument('--disable-popup-blocking')
+            chrome_options.add_argument('--disable-prompt-on-repost')
+        
+        # 通用优化选项
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-breakpad')
+        chrome_options.add_argument('--disable-client-side-phishing-detection')
+        chrome_options.add_argument('--disable-component-extensions-with-background-pages')
+        chrome_options.add_argument('--disable-database')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-features=TranslateUI')
+        chrome_options.add_argument('--disable-sync')
+        chrome_options.add_argument('--metrics-recording-only')
+        chrome_options.add_argument('--mute-audio')
+        
+        # 性能优化
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-default-apps')
+        chrome_options.add_argument('--disable-preconnect')
+        
+        # 页面加载策略
         chrome_options.page_load_strategy = 'eager'
         
-        self.driver = webdriver.Chrome(options=chrome_options)
-        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        # 尝试使用 webdriver-manager 初始化；如果失败，尝试直接创建驱动
+        try:
+            logger.info("初始化 ChromeDriver...")
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            logger.info("使用 webdriver-manager 初始化 ChromeDriver 成功")
+            
+        except Exception as e:
+            logger.warning(f"webdriver-manager 初始化失败: {e}")
+            logger.info("尝试使用系统的 ChromeDriver 或直接调用浏览器...")
+            
+            try:
+                # 备用方案 1: 尝试直接创建驱动（系统中可能已有 chromedriver）
+                self.driver = webdriver.Chrome(options=chrome_options)
+                logger.info("使用系统 ChromeDriver 初始化成功")
+                
+            except Exception as fallback_error:
+                error_msg = f"所有 ChromeDriver 初始化方式都失败: {str(fallback_error)}"
+                logger.error(error_msg)
+                logger.error("诊断信息：")
+                logger.error("1. 确保系统已安装 Chrome 或 Chromium 浏览器:")
+                logger.error("   Ubuntu/Debian: sudo apt-get install chromium-browser")
+                logger.error("   或: sudo apt-get install chromium")
+                logger.error("2. 定位到我的位置检查安装 -> Linux驅動:确保系统有足够的内存和磁盘空间")
+                logger.error("3. 检查是否有权限访问 /dev/shm")
+                logger.error("4. 对于 GitHub Actions，确保容器支持 Chrome 运行")
+                raise Exception(error_msg)
+        
+        try:
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        except Exception as e:
+            logger.warning(f"无法设置导航属性: {e}")
         
         # 设置超时时间
-        self.driver.set_page_load_timeout(120)  # 页面加载超时120秒
-        self.driver.implicitly_wait(10)  # 隐式等待10秒
-        self.driver.set_script_timeout(60)  # 脚本执行超时60秒
+        self.driver.set_page_load_timeout(120)
+        self.driver.implicitly_wait(10)
+        self.driver.set_script_timeout(60)
         
-        # 设置窗口大小，避免某些页面布局问题
+        # 设置窗口大小
         try:
             self.driver.set_window_size(1024, 768)
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"无法设置窗口大小: {e}")
         
     def close_popup(self):
         """关闭初始弹窗"""
